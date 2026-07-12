@@ -1,0 +1,98 @@
+export const puzzles = [
+  {
+    id: "stage-left",
+    title: "Stage Left",
+    subtitle: "A quick warm-up square",
+    accent: "#ffb86b",
+    words: ["show", "have", "over", "were"],
+    across: [
+      { clue: "A public performance", answer: "show" },
+      { clue: "To possess or hold", answer: "have" },
+      { clue: "Above or beyond", answer: "over" },
+      { clue: "Plural past tense of be", answer: "were" },
+    ],
+    down: [
+      { clue: "A display for an audience", answer: "show" },
+      { clue: "To own", answer: "have" },
+      { clue: "Finished or completed", answer: "over" },
+      { clue: "They ___ on time", answer: "were" },
+    ],
+  },
+  {
+    id: "here-and-there",
+    title: "Here and There",
+    subtitle: "A neighborhood-sized square",
+    accent: "#8fe3c8",
+    words: ["than", "here", "area", "near"],
+    across: [
+      { clue: "Used in comparisons", answer: "than" },
+      { clue: "In this place", answer: "here" },
+      { clue: "A region or subject", answer: "area" },
+      { clue: "Close by", answer: "near" },
+    ],
+    down: [
+      { clue: "Used for comparison", answer: "than" },
+      { clue: "Right in this spot", answer: "here" },
+      { clue: "Open space or topic", answer: "area" },
+      { clue: "Not far away", answer: "near" },
+    ],
+  },
+  {
+    id: "future-proof",
+    title: "Future Proof",
+    subtitle: "A tidy logic square",
+    accent: "#7fb0ff",
+    words: ["will", "idea", "less", "last"],
+    across: [
+      { clue: "A promise or intention", answer: "will" },
+      { clue: "A thought or concept", answer: "idea" },
+      { clue: "Not as much", answer: "less" },
+      { clue: "Final or most recent", answer: "last" },
+    ],
+    down: [
+      { clue: "Strong intention", answer: "will" },
+      { clue: "A notion", answer: "idea" },
+      { clue: "Smaller in amount", answer: "less" },
+      { clue: "Coming at the end", answer: "last" },
+    ],
+  },
+  {
+    id: "moving-target",
+    title: "Moving Target",
+    subtitle: "A clean action square",
+    accent: "#f48fb1",
+    words: ["this", "hunt", "into", "stop"],
+    across: [
+      { clue: "The thing being indicated", answer: "this" },
+      { clue: "Search for prey", answer: "hunt" },
+      { clue: "Toward the inside", answer: "into" },
+      { clue: "Cease moving", answer: "stop" },
+    ],
+    down: [
+      { clue: "A nearby object", answer: "this" },
+      { clue: "Track down prey", answer: "hunt" },
+      { clue: "Movement toward the interior", answer: "into" },
+      { clue: "Bring to an end", answer: "stop" },
+    ],
+  },
+  {
+    id: "table-setting",
+    title: "Table Setting",
+    subtitle: "A friendly finish",
+    accent: "#f7d57f",
+    words: ["them", "have", "even", "menu"],
+    across: [
+      { clue: "Object pronoun for a group", answer: "them" },
+      { clue: "To possess", answer: "have" },
+      { clue: "Balanced or level", answer: "even" },
+      { clue: "Restaurant listing", answer: "menu" },
+    ],
+    down: [
+      { clue: "Refers to several people", answer: "them" },
+      { clue: "To own", answer: "have" },
+      { clue: "Exactly balanced", answer: "even" },
+      { clue: "Food list", answer: "menu" },
+    ],
+  },
+];
+

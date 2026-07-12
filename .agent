@@ -1,0 +1,16 @@
+CrossWords build tracker
+
+Objective
+- Create a polished crossword game from the PRD assumptions, commit it to the CrossWords repo, and prepare it for fantomzone.app deployment.
+
+Assumptions
+- The PRD was not present in the workspace, so the game is being built as a compact crossword-style puzzle collection with reusable mechanics.
+- The repo was empty on arrival, so this is a greenfield scaffold.
+
+Process log
+- 2026-07-11: cloned repository and confirmed it had no commits.
+- 2026-07-11: selected valid word-square puzzles to keep across and down answers consistent.
+
+Open questions
+- Final hosting path for fantomzone.app and whether the domain is already wired in Cloudflare.
+
