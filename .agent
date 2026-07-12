@@ -1,20 +1,32 @@
 CrossWords build tracker
 
 Objective
-- Create a polished crossword game from the PRD assumptions, commit it to the CrossWords repo, and prepare it for fantomzone.app deployment.
+- Create a polished CrossWords word-search game from the corrected PRD direction, commit it to the CrossWords repo, deploy it, and add it to the Fantom Zone homepage with Cloudflare routing.
 
 Assumptions
-- The PRD was not present in the workspace, so the game is being built as a compact crossword-style puzzle collection with reusable mechanics.
-- The repo was empty on arrival, so this is a greenfield scaffold.
+- The intended game is a relaxed word-search experience: grid, word bank, swipe selection, validation, hints, no timer, no penalties, accessibility support, visual juice, themes, and progression.
+- The CrossWords repo was empty on arrival, so the game was scaffolded as a greenfield Vite app.
+- `fantomzone.app` should remain the arcade hub, with CrossWords added like the other games rather than replacing the home page.
 
 Process log
 - 2026-07-11: cloned repository and confirmed it had no commits.
-- 2026-07-11: selected valid word-square puzzles to keep across and down answers consistent.
-- 2026-07-11: built the game, verified the production build, and saved/deployed version 1 to Sites.
-- 2026-07-11: added the `fantomzone.app` custom domain to the site; it is pending Cloudflare DNS validation records.
-- 2026-07-11: local Git commit exists, but GitHub push is blocked by missing GitHub auth on this machine.
-- 2026-07-11: fixed the deployed Sites 404 by embedding the Vite build assets directly in the worker and deployed version 2.
+- 2026-07-11: initially built a crossword-square version, then corrected direction after review.
 - 2026-07-11: rebuilt the game to match the intended PRD direction: word-search grid, word bank, swipe validation, hints, no timer, no penalties, themed progression, and brighter visual design.
+- 2026-07-11: verified the production build and fixed the Sites 404/blank-page issue by embedding the Vite build assets directly in the worker.
+- 2026-07-11: committed and pushed CrossWords to GitHub at `workceostewart-lang/CrossWords`.
+- 2026-07-11: deployed CrossWords to Sites version 4. Temporary live URL: `https://crosswords-fantomzone.unknownfigure.chatgpt.site/`.
+- 2026-07-11: removed the accidental root-domain custom-domain attachment for `fantomzone.app` so CrossWords does not replace the arcade hub.
+- 2026-07-11: added `crosswords.fantomzone.app` as the CrossWords custom domain in Sites.
+- 2026-07-11: found the Fantom Zone homepage source at `/Users/lexington/Desktop/Games/FantomZone`.
+- 2026-07-11: added CrossWords as a third game card on the Fantom Zone homepage and deployed the homepage to Cloudflare.
 
-Open questions
-- Final Cloudflare DNS setup for `fantomzone.app`.
+Current status
+- CrossWords source repo is committed and pushed.
+- CrossWords is playable at the temporary Sites URL.
+- Fantom Zone homepage has a CrossWords card pointing to `https://crosswords.fantomzone.app`.
+- Cloudflare DNS records for `crosswords.fantomzone.app` were entered and public TXT validation records were visible during verification.
+- Sites reports the provider side active, with SSL/custom-domain validation still finishing.
+
+Remaining work
+- Refresh and verify `https://crosswords.fantomzone.app` after DNS/SSL propagation completes.
+- If needed, recheck the Cloudflare CNAME for `crosswords` and the Sites custom-domain status.
