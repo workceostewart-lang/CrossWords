@@ -14,6 +14,7 @@ Process log
 - 2026-07-11: added the `fantomzone.app` custom domain to the site; it is pending Cloudflare DNS validation records.
 - 2026-07-11: local Git commit exists, but GitHub push is blocked by missing GitHub auth on this machine.
 - 2026-07-11: fixed the deployed Sites 404 by embedding the Vite build assets directly in the worker and deployed version 2.
+- 2026-07-11: rebuilt the game to match the intended PRD direction: word-search grid, word bank, swipe validation, hints, no timer, no penalties, themed progression, and brighter visual design.
 
 Open questions
 - Final Cloudflare DNS setup for `fantomzone.app`.

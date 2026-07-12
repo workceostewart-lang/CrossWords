@@ -1,471 +1,408 @@
-import { puzzles } from "./puzzles.js";
+import { fillerAlphabet, levels } from "./puzzles.js";
 import "./styles.css";
 
-const STORAGE_KEY = "crosswords:v1";
+const STORAGE_KEY = "crosswords-word-search:v2";
 const app = document.querySelector("#app");
 
 const state = {
-  puzzleId: puzzles[0].id,
-  direction: "across",
-  cursor: { row: 0, col: 0 },
-  inputs: {},
-  startedAt: null,
-  elapsedMs: 0,
-  completedAt: null,
-  checked: false,
+  levelIndex: 0,
+  found: {},
+  activeStart: null,
+  activeEnd: null,
+  dragging: false,
+  hintWord: null,
+  message: "Find every hidden word.",
 };
 
-function gridSize(puzzle) {
-  return puzzle.words.length;
-}
-
-function makeSolutions(puzzle) {
-  return puzzle.words.map((word) => word.toLowerCase().split(""));
-}
-
-function makeNumberMap(size) {
-  const map = new Map();
-  let number = 1;
-  for (let row = 0; row < size; row += 1) {
-    for (let col = 0; col < size; col += 1) {
-      const startsAcross = col === 0;
-      const startsDown = row === 0;
-      if (startsAcross || startsDown) {
-        map.set(`${row},${col}`, number);
-        number += 1;
-      }
-    }
-  }
-  return map;
-}
-
-function getPuzzle(puzzleId) {
-  return puzzles.find((puzzle) => puzzle.id === puzzleId) ?? puzzles[0];
-}
-
-function getCompletedCount(puzzle, inputs) {
-  const size = gridSize(puzzle);
-  let correct = 0;
-  for (let row = 0; row < size; row += 1) {
-    for (let col = 0; col < size; col += 1) {
-      const expected = puzzle.words[row][col].toUpperCase();
-      if ((inputs[`${row},${col}`] ?? "") === expected) {
-        correct += 1;
-      }
-    }
-  }
-  return correct;
-}
-
-function loadSavedState() {
+function loadState() {
   try {
-    const raw = localStorage.getItem(STORAGE_KEY);
-    if (!raw) return;
-    const parsed = JSON.parse(raw);
-    if (parsed && typeof parsed === "object") {
-      state.puzzleId = parsed.puzzleId ?? state.puzzleId;
-      state.direction = parsed.direction === "down" ? "down" : "across";
-      state.cursor = parsed.cursor ?? state.cursor;
-      state.inputs = parsed.inputs ?? {};
-      state.startedAt = parsed.startedAt ?? null;
-      state.elapsedMs = parsed.elapsedMs ?? 0;
-      state.completedAt = parsed.completedAt ?? null;
-      state.checked = Boolean(parsed.checked);
+    const saved = JSON.parse(localStorage.getItem(STORAGE_KEY) ?? "{}");
+    if (Number.isInteger(saved.levelIndex)) {
+      state.levelIndex = Math.min(Math.max(saved.levelIndex, 0), levels.length - 1);
     }
+    state.found = saved.found ?? {};
   } catch {
-    // Ignore corrupt storage and start fresh.
+    state.levelIndex = 0;
+    state.found = {};
   }
 }
 
 function saveState() {
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+  localStorage.setItem(
+    STORAGE_KEY,
+    JSON.stringify({
+      levelIndex: state.levelIndex,
+      found: state.found,
+    }),
+  );
 }
 
-function getElapsedMs() {
-  if (state.completedAt || !state.startedAt) {
-    return state.elapsedMs;
+function currentLevel() {
+  return levels[state.levelIndex];
+}
+
+function wordKey(levelId, word) {
+  return `${levelId}:${word}`;
+}
+
+function seededIndex(row, col, size) {
+  return (row * 17 + col * 31 + size * 13 + row * col * 7) % fillerAlphabet.length;
+}
+
+function buildGrid(level) {
+  const grid = Array.from({ length: level.size }, (_, row) =>
+    Array.from({ length: level.size }, (_, col) => fillerAlphabet[seededIndex(row, col, level.size)]),
+  );
+
+  for (const placement of level.placements) {
+    [...placement.word].forEach((letter, index) => {
+      const row = placement.row + placement.dr * index;
+      const col = placement.col + placement.dc * index;
+      grid[row][col] = letter;
+    });
   }
-  return state.elapsedMs + (Date.now() - state.startedAt);
+
+  return grid;
 }
 
-function formatTime(ms) {
-  const totalSeconds = Math.max(0, Math.floor(ms / 1000));
-  const minutes = Math.floor(totalSeconds / 60)
-    .toString()
-    .padStart(2, "0");
-  const seconds = (totalSeconds % 60).toString().padStart(2, "0");
-  return `${minutes}:${seconds}`;
+function cellsForPlacement(placement) {
+  return [...placement.word].map((_, index) => ({
+    row: placement.row + placement.dr * index,
+    col: placement.col + placement.dc * index,
+  }));
 }
 
-function startTimerIfNeeded() {
-  if (!state.startedAt && !state.completedAt) {
-    state.startedAt = Date.now();
+function getPlacement(level, word) {
+  return level.placements.find((placement) => placement.word === word);
+}
+
+function normalizeLine(start, end) {
+  if (!start || !end) return [];
+  const rowDelta = end.row - start.row;
+  const colDelta = end.col - start.col;
+  const rowStep = Math.sign(rowDelta);
+  const colStep = Math.sign(colDelta);
+  const length = Math.max(Math.abs(rowDelta), Math.abs(colDelta)) + 1;
+
+  if (!(rowDelta === 0 || colDelta === 0 || Math.abs(rowDelta) === Math.abs(colDelta))) {
+    return [start];
   }
+
+  return Array.from({ length }, (_, index) => ({
+    row: start.row + rowStep * index,
+    col: start.col + colStep * index,
+  }));
 }
 
-function finishPuzzle() {
-  if (state.completedAt) return;
-  state.completedAt = Date.now();
-  state.elapsedMs = getElapsedMs();
-  state.startedAt = null;
-  state.checked = true;
-  saveState();
+function wordFromCells(grid, cells) {
+  return cells.map((cell) => grid[cell.row]?.[cell.col] ?? "").join("");
 }
 
-function setPuzzle(puzzleId) {
-  const puzzle = getPuzzle(puzzleId);
-  state.puzzleId = puzzle.id;
-  state.direction = "across";
-  state.cursor = { row: 0, col: 0 };
-  state.inputs = {};
-  state.startedAt = null;
-  state.elapsedMs = 0;
-  state.completedAt = null;
-  state.checked = false;
+function foundWords(level) {
+  return level.words.filter((word) => state.found[wordKey(level.id, word)]);
+}
+
+function isLevelComplete(level) {
+  return foundWords(level).length === level.words.length;
+}
+
+function cellId(cell) {
+  return `${cell.row},${cell.col}`;
+}
+
+function foundCellIds(level) {
+  const ids = new Set();
+  for (const word of foundWords(level)) {
+    for (const cell of cellsForPlacement(getPlacement(level, word))) {
+      ids.add(cellId(cell));
+    }
+  }
+  return ids;
+}
+
+function selectedCellIds() {
+  return new Set(normalizeLine(state.activeStart, state.activeEnd).map(cellId));
+}
+
+function updateSelectionView() {
+  const selectedIds = selectedCellIds();
+  app.querySelectorAll("[data-row][data-col]").forEach((cell) => {
+    const id = `${cell.dataset.row},${cell.dataset.col}`;
+    cell.classList.toggle("is-selected", selectedIds.has(id));
+  });
+}
+
+function hintCellIds(level) {
+  if (!state.hintWord) return new Set();
+  const placement = getPlacement(level, state.hintWord);
+  return placement ? new Set(cellsForPlacement(placement).map(cellId)) : new Set();
+}
+
+function validateSelection() {
+  const level = currentLevel();
+  const grid = buildGrid(level);
+  const cells = normalizeLine(state.activeStart, state.activeEnd);
+  const candidate = wordFromCells(grid, cells);
+  const reversed = [...candidate].reverse().join("");
+  const match = level.words.find((word) => word === candidate || word === reversed);
+
+  if (match && !state.found[wordKey(level.id, match)]) {
+    state.found[wordKey(level.id, match)] = true;
+    state.message = isLevelComplete(level) ? "Level clear." : `${match} found.`;
+    state.hintWord = null;
+    saveState();
+  } else if (match) {
+    state.message = `${match} is already found.`;
+  } else {
+    state.message = "Keep looking.";
+  }
+
+  state.activeStart = null;
+  state.activeEnd = null;
+  state.dragging = false;
+  render();
+}
+
+function setLevel(index) {
+  state.levelIndex = index;
+  state.activeStart = null;
+  state.activeEnd = null;
+  state.dragging = false;
+  state.hintWord = null;
+  state.message = "Find every hidden word.";
   saveState();
   render();
 }
 
-function selectClue(direction, index) {
-  state.direction = direction;
-  state.cursor = direction === "across" ? { row: index, col: 0 } : { row: 0, col: index };
-  startTimerIfNeeded();
+function resetLevel() {
+  const level = currentLevel();
+  for (const word of level.words) {
+    delete state.found[wordKey(level.id, word)];
+  }
+  state.hintWord = null;
+  state.message = "Level reset.";
   saveState();
   render();
 }
 
-function toggleDirection() {
-  state.direction = state.direction === "across" ? "down" : "across";
-  startTimerIfNeeded();
-  saveState();
+function showHint() {
+  const level = currentLevel();
+  const remaining = level.words.find((word) => !state.found[wordKey(level.id, word)]);
+  state.hintWord = remaining ?? null;
+  state.message = remaining ? `${remaining[0]} starts the next word.` : "Everything is found.";
   render();
 }
 
-function normalizeLetter(value) {
-  return value.replace(/[^a-z]/gi, "").slice(0, 1).toUpperCase();
+function nextLevel() {
+  const next = Math.min(state.levelIndex + 1, levels.length - 1);
+  setLevel(next);
 }
 
-function moveCursor(deltaRow, deltaCol) {
-  const puzzle = getPuzzle(state.puzzleId);
-  const size = gridSize(puzzle);
-  const row = Math.min(size - 1, Math.max(0, state.cursor.row + deltaRow));
-  const col = Math.min(size - 1, Math.max(0, state.cursor.col + deltaCol));
-  state.cursor = { row, col };
+function handleCellStart(cell) {
+  state.activeStart = cell;
+  state.activeEnd = cell;
+  state.dragging = true;
+  state.hintWord = null;
+  updateSelectionView();
 }
 
-function currentLineIndex() {
-  return state.direction === "across" ? state.cursor.row : state.cursor.col;
+function handleCellMove(cell) {
+  if (!state.dragging || !state.activeStart) return;
+  state.activeEnd = cell;
+  updateSelectionView();
+}
+
+function handleCellEnd(cell) {
+  if (!state.activeStart) {
+    handleCellStart(cell);
+    return;
+  }
+
+  if (!state.dragging && state.activeStart) {
+    state.activeEnd = cell;
+  } else {
+    state.activeEnd = cell;
+  }
+
+  validateSelection();
+}
+
+function renderGrid(level, grid) {
+  const foundIds = foundCellIds(level);
+  const selectedIds = selectedCellIds();
+  const hintedIds = hintCellIds(level);
+
+  return grid
+    .map((row, rowIndex) => {
+      const cells = row
+        .map((letter, colIndex) => {
+          const id = `${rowIndex},${colIndex}`;
+          const classes = [
+            "cell",
+            foundIds.has(id) ? "is-found" : "",
+            selectedIds.has(id) ? "is-selected" : "",
+            hintedIds.has(id) ? "is-hinted" : "",
+          ]
+            .filter(Boolean)
+            .join(" ");
+
+          return `
+            <button
+              class="${classes}"
+              type="button"
+              data-row="${rowIndex}"
+              data-col="${colIndex}"
+              aria-label="Row ${rowIndex + 1}, column ${colIndex + 1}, ${letter}"
+            >${letter}</button>
+          `;
+        })
+        .join("");
+      return `<div class="grid-row">${cells}</div>`;
+    })
+    .join("");
+}
+
+function renderWordBank(level) {
+  return level.words
+    .map((word) => {
+      const found = state.found[wordKey(level.id, word)];
+      return `<li class="word ${found ? "is-found" : ""}">${word}</li>`;
+    })
+    .join("");
+}
+
+function renderLevelTabs() {
+  return levels
+    .map(
+      (level, index) => `
+        <button class="level-tab ${index === state.levelIndex ? "is-active" : ""}" type="button" data-level="${index}">
+          <span>${index + 1}</span>
+          ${level.title}
+        </button>
+      `,
+    )
+    .join("");
 }
 
 function render() {
-  const puzzle = getPuzzle(state.puzzleId);
-  const size = gridSize(puzzle);
-  const solutions = makeSolutions(puzzle);
-  const numberMap = makeNumberMap(size);
-  const correctCount = getCompletedCount(puzzle, state.inputs);
-  const totalCells = size * size;
-  const progress = Math.round((correctCount / totalCells) * 100);
-  const activeLine = currentLineIndex();
-  const elapsed = getElapsedMs();
-  const isSolved = correctCount === totalCells;
-  if (isSolved) finishPuzzle();
-
-  const board = [];
-  for (let row = 0; row < size; row += 1) {
-    const cells = [];
-    for (let col = 0; col < size; col += 1) {
-      const key = `${row},${col}`;
-      const isActive =
-        (state.direction === "across" && row === state.cursor.row) ||
-        (state.direction === "down" && col === state.cursor.col);
-      const isCursor = row === state.cursor.row && col === state.cursor.col;
-      const expected = solutions[row][col];
-      const value = state.inputs[key] ?? "";
-      const isCorrect = value === expected && value.length === 1;
-      const isWrong = state.checked && value.length === 1 && value !== expected;
-      const startsHere = numberMap.has(key);
-      const number = numberMap.get(key);
-      cells.push(`
-        <button
-          class="cell ${isActive ? "is-active" : ""} ${isCursor ? "is-cursor" : ""} ${isCorrect ? "is-correct" : ""} ${isWrong ? "is-wrong" : ""}"
-          data-row="${row}"
-          data-col="${col}"
-          type="button"
-        >
-          ${startsHere ? `<span class="cell-number">${number}</span>` : ""}
-          <span class="cell-letter">${value}</span>
-        </button>
-      `);
-    }
-    board.push(`<div class="row">${cells.join("")}</div>`);
-  }
-
-  const acrossClues = puzzle.across
-    .map((clue, index) => {
-      const number = numberMap.get(`${index},0`);
-      const active = state.direction === "across" && activeLine === index;
-      return `
-        <button class="clue ${active ? "is-active" : ""}" type="button" data-direction="across" data-index="${index}">
-          <span class="clue-number">${number}</span>
-          <span class="clue-text">${clue.clue}</span>
-        </button>
-      `;
-    })
-    .join("");
-
-  const downClues = puzzle.down
-    .map((clue, index) => {
-      const number = numberMap.get(`0,${index}`);
-      const active = state.direction === "down" && activeLine === index;
-      return `
-        <button class="clue ${active ? "is-active" : ""}" type="button" data-direction="down" data-index="${index}">
-          <span class="clue-number">${number}</span>
-          <span class="clue-text">${clue.clue}</span>
-        </button>
-      `;
-    })
-    .join("");
-
-  const cards = puzzles
-    .map((item) => {
-      const saved = item.id === puzzle.id;
-      return `
-        <button
-          class="puzzle-card ${saved ? "is-selected" : ""}"
-          type="button"
-          data-action="puzzle"
-          data-puzzle="${item.id}"
-          style="--accent:${item.accent}"
-        >
-          <span class="puzzle-title">${item.title}</span>
-          <span class="puzzle-subtitle">${item.subtitle}</span>
-          <span class="puzzle-meta">${item.words.length} x ${item.words.length} word square</span>
-        </button>
-      `;
-    })
-    .join("");
+  const level = currentLevel();
+  const grid = buildGrid(level);
+  const foundCount = foundWords(level).length;
+  const complete = isLevelComplete(level);
+  const progress = Math.round((foundCount / level.words.length) * 100);
 
   app.innerHTML = `
-    <div class="shell">
-      <aside class="sidebar">
-        <div class="brand">
-          <p class="eyebrow">Fantomzone collection</p>
-          <h1>CrossWords</h1>
-          <p class="lede">A compact crossword playground built from mirrored word squares.</p>
-        </div>
-        <div class="stats">
-          <div class="stat">
-            <span>Progress</span>
-            <strong>${progress}%</strong>
-          </div>
-          <div class="stat">
-            <span>Timer</span>
-            <strong>${formatTime(elapsed)}</strong>
-          </div>
-          <div class="stat">
-            <span>Mode</span>
-            <strong>${state.direction.toUpperCase()}</strong>
-          </div>
-        </div>
-        <div class="puzzle-list">
-          ${cards}
-        </div>
-      </aside>
-
-      <main class="main">
-        <section class="hero-card">
+    <main class="game-shell" style="--accent:${level.accent};--glow:${level.glow}">
+      <section class="game-board" aria-label="CrossWords word search">
+        <header class="topbar">
           <div>
-            <p class="eyebrow">${puzzle.subtitle}</p>
-            <h2>${puzzle.title}</h2>
-            <p class="hero-copy">Fill the grid with the clues on the side. Click a clue to lock direction, or use the arrow keys to move around the square.</p>
+            <p class="kicker">CrossWords</p>
+            <h1>${level.title}</h1>
           </div>
-          <div class="hero-badge" style="--accent:${puzzle.accent}">
-            <span>${size}x${size}</span>
-            <strong>Word Square</strong>
+          <div class="progress" aria-label="${progress}% complete">
+            <span>${foundCount}/${level.words.length}</span>
+            <div><i style="width:${progress}%"></i></div>
           </div>
-        </section>
+        </header>
 
-        <section class="playfield">
-          <div class="board-panel">
-            <div class="board-wrap">
-              <div class="board" aria-label="Crossword grid">${board.join("")}</div>
-            </div>
-            ${isSolved ? `<div class="success">Solved. Nice work.</div>` : ""}
-            <div class="controls">
-              <button type="button" class="action" data-action="toggle-direction">Toggle direction</button>
-              <button type="button" class="action" data-action="check">Check puzzle</button>
-              <button type="button" class="action" data-action="reveal">Reveal cell</button>
-              <button type="button" class="action ghost" data-action="reset">Reset</button>
-            </div>
-          </div>
+        <div class="level-strip" aria-label="Levels">
+          ${renderLevelTabs()}
+        </div>
 
-          <div class="clue-panel">
-            <div class="clue-column">
-              <h3>Across</h3>
-              <div class="clues">${acrossClues}</div>
-            </div>
-            <div class="clue-column">
-              <h3>Down</h3>
-              <div class="clues">${downClues}</div>
-            </div>
+        <div class="board-wrap">
+          <div class="letter-grid" style="--grid-size:${level.size}">
+            ${renderGrid(level, grid)}
           </div>
-        </section>
-      </main>
-    </div>
+        </div>
+      </section>
+
+      <aside class="side-panel">
+        <div class="level-card">
+          <span>${level.difficulty}</span>
+          <h2>${level.theme}</h2>
+        </div>
+
+        <ul class="word-bank" aria-label="Word bank">
+          ${renderWordBank(level)}
+        </ul>
+
+        <div class="actions">
+          <button class="primary" type="button" data-action="hint">Hint</button>
+          <button type="button" data-action="reset">Reset</button>
+          <button type="button" data-action="next" ${complete && state.levelIndex < levels.length - 1 ? "" : "disabled"}>Next</button>
+        </div>
+
+        <p class="status" aria-live="polite">${state.message}</p>
+      </aside>
+    </main>
   `;
-
-  const cursorCell = app.querySelector(`[data-row="${state.cursor.row}"][data-col="${state.cursor.col}"]`);
-  if (cursorCell) {
-    cursorCell.focus({ preventScroll: true });
-  }
 }
 
-function setLetter(letter) {
-  const puzzle = getPuzzle(state.puzzleId);
-  const size = gridSize(puzzle);
-  const { row, col } = state.cursor;
-  const key = `${row},${col}`;
-  state.inputs[key] = letter;
-  state.checked = false;
-  startTimerIfNeeded();
-  if (state.direction === "across") {
-    if (col < size - 1) state.cursor = { row, col: col + 1 };
-  } else if (row < size - 1) {
-    state.cursor = { row: row + 1, col };
-  }
-  saveState();
-  render();
+function cellFromTarget(target) {
+  const cell = target.closest("[data-row][data-col]");
+  if (!cell) return null;
+  return {
+    row: Number(cell.dataset.row),
+    col: Number(cell.dataset.col),
+  };
 }
 
-function clearCurrent() {
-  const { row, col } = state.cursor;
-  const key = `${row},${col}`;
-  if (state.inputs[key]) {
-    state.inputs[key] = "";
-    state.checked = false;
-  }
+function cellFromPoint(event) {
+  const target = document.elementFromPoint(event.clientX, event.clientY);
+  return target ? cellFromTarget(target) : null;
 }
 
-function revealCurrent() {
-  const puzzle = getPuzzle(state.puzzleId);
-  const { row, col } = state.cursor;
-  state.inputs[`${row},${col}`] = puzzle.words[row][col].toUpperCase();
-  state.checked = false;
-  startTimerIfNeeded();
-  saveState();
-  render();
-}
+app.addEventListener("pointerdown", (event) => {
+  const cell = cellFromTarget(event.target);
+  if (!cell) return;
+  event.preventDefault();
+  handleCellStart(cell);
+});
 
-function resetPuzzle() {
-  const puzzle = getPuzzle(state.puzzleId);
-  state.inputs = {};
-  state.startedAt = null;
-  state.elapsedMs = 0;
-  state.completedAt = null;
-  state.checked = false;
-  state.direction = "across";
-  state.cursor = { row: 0, col: 0 };
-  saveState();
-  render();
-}
+document.addEventListener("pointermove", (event) => {
+  const cell = cellFromPoint(event);
+  if (cell) handleCellMove(cell);
+});
+
+app.addEventListener("pointerover", (event) => {
+  const cell = cellFromTarget(event.target);
+  if (cell) handleCellMove(cell);
+});
+
+document.addEventListener("pointerup", (event) => {
+  const cell = cellFromPoint(event) ?? cellFromTarget(event.target);
+  if (cell) handleCellEnd(cell);
+});
+
+app.addEventListener("mousedown", (event) => {
+  const cell = cellFromTarget(event.target);
+  if (!cell) return;
+  event.preventDefault();
+  handleCellStart(cell);
+});
+
+document.addEventListener("mousemove", (event) => {
+  const cell = cellFromPoint(event);
+  if (cell) handleCellMove(cell);
+});
+
+document.addEventListener("mouseup", (event) => {
+  const cell = cellFromPoint(event) ?? cellFromTarget(event.target);
+  if (cell) handleCellEnd(cell);
+});
 
 app.addEventListener("click", (event) => {
-  const target = event.target.closest("[data-action], [data-row], [data-col], [data-direction]");
-  if (!target) return;
-
-  const action = target.getAttribute("data-action");
-  if (action === "puzzle") {
-    setPuzzle(target.getAttribute("data-puzzle"));
+  const levelButton = event.target.closest("[data-level]");
+  if (levelButton) {
+    setLevel(Number(levelButton.dataset.level));
     return;
   }
 
-  if (action === "toggle-direction") {
-    toggleDirection();
-    return;
-  }
-
-  if (action === "check") {
-    state.checked = true;
-    saveState();
-    render();
-    return;
-  }
-
-  if (action === "reveal") {
-    revealCurrent();
-    return;
-  }
-
-  if (action === "reset") {
-    resetPuzzle();
-    return;
-  }
-
-  if (target.matches("[data-direction]")) {
-    selectClue(target.getAttribute("data-direction"), Number(target.getAttribute("data-index")));
-    return;
-  }
-
-  const row = Number(target.getAttribute("data-row"));
-  const col = Number(target.getAttribute("data-col"));
-  state.cursor = { row, col };
-  startTimerIfNeeded();
-  saveState();
-  render();
+  const action = event.target.closest("[data-action]")?.dataset.action;
+  if (action === "hint") showHint();
+  if (action === "reset") resetLevel();
+  if (action === "next") nextLevel();
 });
 
-document.addEventListener("keydown", (event) => {
-  const key = event.key;
-  if (key.length === 1 && /[a-z]/i.test(key)) {
-    event.preventDefault();
-    setLetter(normalizeLetter(key));
-    return;
-  }
-
-  if (key === "Backspace") {
-    event.preventDefault();
-    clearCurrent();
-    if (state.direction === "across") {
-      moveCursor(0, -1);
-    } else {
-      moveCursor(-1, 0);
-    }
-    startTimerIfNeeded();
-    saveState();
-    render();
-    return;
-  }
-
-  if (key === "ArrowLeft") {
-    event.preventDefault();
-    moveCursor(0, -1);
-  } else if (key === "ArrowRight") {
-    event.preventDefault();
-    moveCursor(0, 1);
-  } else if (key === "ArrowUp") {
-    event.preventDefault();
-    moveCursor(-1, 0);
-  } else if (key === "ArrowDown") {
-    event.preventDefault();
-    moveCursor(1, 0);
-  } else if (key === "Tab" || key === " ") {
-    event.preventDefault();
-    toggleDirection();
-    return;
-  } else if (key === "Enter") {
-    event.preventDefault();
-    state.checked = true;
-    saveState();
-    render();
-    return;
-  } else {
-    return;
-  }
-
-  startTimerIfNeeded();
-  saveState();
-  render();
-});
-
-loadSavedState();
+loadState();
 render();
