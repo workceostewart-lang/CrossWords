@@ -21,13 +21,22 @@ for (const file of assetFiles) {
   assets[pathname] = await readFile(resolve(assetsDir, file), "utf8");
 }
 
-const html = indexTemplate
+let css = "";
+let js = "";
+
+const htmlWithoutAssets = indexTemplate
   .replace(/<link rel="stylesheet" crossorigin href="([^"]+)">/g, (_match, href) => {
-    return `<style>${assets[href] ?? ""}</style>`;
+    css += assets[href] ?? "";
+    return "";
   })
   .replace(/<script type="module" crossorigin src="([^"]+)"><\/script>/g, (_match, src) => {
-    return `<script type="module">${assets[src] ?? ""}<\\/script>`;
+    js += assets[src] ?? "";
+    return "";
   });
+
+const html = htmlWithoutAssets
+  .replace("</head>", `<style>${css}</style>\n  </head>`)
+  .replace("</body>", `<script type="module">${js}</script>\n  </body>`);
 
 const standaloneAssets = Object.fromEntries(
   Object.entries(assets).map(([pathname, content]) => [
