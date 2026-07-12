@@ -1,5 +1,5 @@
-import { mkdir, writeFile, rm } from "node:fs/promises";
-import { dirname, resolve } from "node:path";
+import { mkdir, readFile, readdir, writeFile, rm } from "node:fs/promises";
+import { extname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { build } from "vite";
 
@@ -11,49 +11,59 @@ await rm(distDir, { recursive: true, force: true });
 await build({ root });
 await mkdir(serverDir, { recursive: true });
 
-const worker = `const ASSET_EXTENSIONS = new Set([
-  ".css",
-  ".js",
-  ".mjs",
-  ".json",
-  ".png",
-  ".jpg",
-  ".jpeg",
-  ".gif",
-  ".webp",
-  ".svg",
-  ".ico",
-  ".txt",
-  ".map",
-]);
+const indexTemplate = await readFile(resolve(distDir, "index.html"), "utf8");
+const assetsDir = resolve(distDir, "assets");
+const assetFiles = await readdir(assetsDir);
+const assets = {};
 
-function isAsset(pathname) {
-  return pathname.startsWith("/assets/") || [...ASSET_EXTENSIONS].some((extension) => pathname.endsWith(extension));
+for (const file of assetFiles) {
+  const pathname = `/assets/${file}`;
+  assets[pathname] = await readFile(resolve(assetsDir, file), "utf8");
 }
 
-function assetRequest(url, pathname) {
-  return new Request(new URL(pathname, url), {
-    headers: { accept: "*/*" },
+const html = indexTemplate
+  .replace(/<link rel="stylesheet" crossorigin href="([^"]+)">/g, (_match, href) => {
+    return `<style>${assets[href] ?? ""}</style>`;
+  })
+  .replace(/<script type="module" crossorigin src="([^"]+)"><\/script>/g, (_match, src) => {
+    return `<script type="module">${assets[src] ?? ""}<\\/script>`;
   });
-}
+
+const standaloneAssets = Object.fromEntries(
+  Object.entries(assets).map(([pathname, content]) => [
+    pathname,
+    {
+      content,
+      type: extname(pathname) === ".css" ? "text/css; charset=utf-8" : "text/javascript; charset=utf-8",
+    },
+  ]),
+);
+
+const worker = `const INDEX_HTML = ${JSON.stringify(html)};
+const ASSETS = ${JSON.stringify(standaloneAssets)};
 
 export default {
-  async fetch(request, env) {
+  async fetch(request) {
     const url = new URL(request.url);
 
     if (request.method !== "GET" && request.method !== "HEAD") {
       return new Response("Method not allowed", { status: 405 });
     }
 
-    if (isAsset(url.pathname)) {
-      const response = await env.ASSETS.fetch(assetRequest(url, url.pathname));
-      if (response.status !== 404) return response;
+    if (ASSETS[url.pathname]) {
+      return new Response(ASSETS[url.pathname].content, {
+        headers: {
+          "content-type": ASSETS[url.pathname].type,
+          "cache-control": "public, max-age=31536000, immutable",
+        },
+      });
     }
 
-    const response = await env.ASSETS.fetch(assetRequest(url, "/index.html"));
-    return new Response(response.body, {
-      headers: response.headers,
-      status: response.status,
+    return new Response(INDEX_HTML, {
+      headers: {
+        "content-type": "text/html; charset=utf-8",
+        "cache-control": "no-store",
+      },
     });
   },
 };
