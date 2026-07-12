@@ -10,7 +10,10 @@ Assumptions
 Process log
 - 2026-07-11: cloned repository and confirmed it had no commits.
 - 2026-07-11: selected valid word-square puzzles to keep across and down answers consistent.
+- 2026-07-11: built the game, verified the production build, and saved/deployed version 1 to Sites.
+- 2026-07-11: added the `fantomzone.app` custom domain to the site; it is pending Cloudflare DNS validation records.
+- 2026-07-11: local Git commit exists, but GitHub push is blocked by missing GitHub auth on this machine.
 
 Open questions
-- Final hosting path for fantomzone.app and whether the domain is already wired in Cloudflare.
-
+- Final Cloudflare DNS setup for `fantomzone.app`.
+- GitHub authentication method to push the repo commit upstream.
